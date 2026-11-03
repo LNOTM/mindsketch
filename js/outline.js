@@ -1,4 +1,6 @@
-/* MindSketch 大纲模式（借鉴幕布） */
+/* MindSketch 大纲模式 | Outline mode
+ * 画布/大纲双向同步：缩进树编辑、增删、折叠（借鉴幕布）。
+ * Two-way sync with canvas: indented tree editing, add/remove, collapse. */
 (function(){
 'use strict';
 var MS = window.MS = window.MS || {};

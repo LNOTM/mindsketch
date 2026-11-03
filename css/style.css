@@ -161,6 +161,13 @@ kbd{background:#f1f4f9;border:1px solid #d8dfe9;border-bottom-width:2px;border-r
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes popIn{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
 
+/* ── 框选矩形 | rubber-band selection rect ── */
+#band{position:absolute;border:1.5px solid var(--accent);background:rgba(63,126,247,.13);border-radius:4px;z-index:15;pointer-events:none}
+
+/* ── 拖拽幽灵预览 | drag ghost preview ── */
+.ms-ghost{position:fixed;z-index:400;padding:8px 16px;font-size:14px;font-weight:600;box-shadow:0 10px 26px rgba(16,24,40,.3);opacity:.88;pointer-events:none;white-space:nowrap;max-width:280px;overflow:hidden;text-overflow:ellipsis}
+.ms-ghost-badge{display:inline-block;margin-left:8px;padding:0 7px;border-radius:9px;background:rgba(0,0,0,.28);color:#fff;font-size:11px;font-weight:700;vertical-align:1px}
+
 /* ── 响应式 ─────────────────────────────── */
 @media (max-width:900px){
   #logo span em{display:none}

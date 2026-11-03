@@ -1,6 +1,8 @@
-/* MindSketch 布局引擎
- * 支持结构：map（平衡导图）| right（逻辑图·右）| left（逻辑图·左）| org（组织结构图）
- * 输出所有可见节点盒型 + 连线，供 HTML 渲染与 SVG 导出共用。
+/* MindSketch 布局引擎 | Layout engine
+ * 四种结构：map（平衡导图）| right（逻辑图·右）| left（逻辑图·左）| org（组织结构图）
+ * Four structures: mind-map (balanced), logic chart right/left, org chart.
+ * 输出所有可见节点盒型 + 连线，供 HTML 渲染与 SVG 导出共用；列对齐 + 子树跨度收缩，兄弟子树零重叠。
+ * Emits node boxes + links shared by HTML renderer and SVG exporter; sibling subtrees never overlap.
  */
 (function(){
 'use strict';

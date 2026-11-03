@@ -1,6 +1,8 @@
-/* MindSketch 导入 / 导出
- * 导出：PNG JPG SVG PDF Markdown OPML FreeMind JSON 交互网页
- * 导入：XMind FreeMind OPML Markdown TXT JSON
+/* MindSketch 导入 / 导出 | Import / Export
+ * 导出 Export：PNG JPG SVG PDF Markdown OPML FreeMind JSON 交互网页 interactive-HTML
+ * 导入 Import：XMind(.xmind zip) FreeMind OPML Markdown TXT JSON
+ * SVG 嵌套分组支撑交互网页的分支折叠；位图经 SVG→Image→Canvas 光栅化。
+ * Nested <g> groups power branch collapse in exported HTML; bitmaps rasterized via canvas.
  */
 (function(){
 'use strict';

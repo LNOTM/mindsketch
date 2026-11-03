@@ -1,4 +1,6 @@
-/* MindSketch 主题系统 */
+/* MindSketch 主题系统 | Themes
+ * 8 套配色 + 分支彩虹色板；节点尺寸测量与样式计算由渲染与导出共享，保证所见即所得。
+ * 8 palettes + rainbow branch colors; node measuring/styling shared by renderer & exporter (WYSIWYG). */
 (function(){
 'use strict';
 var MS = window.MS = window.MS || {};

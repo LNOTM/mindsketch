@@ -1,4 +1,8 @@
-/* MindSketch 编辑器：历史记录、快捷键、行内编辑、拖拽、复制粘贴 */
+/* MindSketch 编辑器 | Editor
+ * 快照式撤销/重做（栈顶=当前态，仅同节点文本编辑合并）、快捷键、行内编辑、
+ * 拖拽（单/多选、落点指示、幽灵预览、边缘自动平移）、多选批量操作、剪贴板。
+ * Snapshot undo/redo (top=current; coalesce only same-node text edits), shortcuts,
+ * inline editing, single/multi drag with ghost & auto-pan, batch ops, clipboard. */
 (function(){
 'use strict';
 var MS = window.MS = window.MS || {};
@@ -73,6 +77,13 @@ var editor = MS.editor = {
     }
     return changed;
   },
+  /* ── 节点操作 | node ops ─────────────── */
+  /* 当前选中集（多选感知，排除根）| current selection ids (multi-aware, root excluded) */
+  selectionIds: function(){
+    var doc = view.doc;
+    var ids = (view.multi && view.multi.size > 1) ? Array.from(view.multi) : (view.sel ? [view.sel] : []);
+    return ids.filter(function(id){ return id && id !== doc.root.id && doc.find(id); });
+  },
   addChild: function(){
     var doc = view.doc;
     var pid = view.sel || doc.root.id;
@@ -80,6 +91,7 @@ var editor = MS.editor = {
     this.ensureAncestorsVisible(pid);
     var n = doc.addChild(pid, doc.createNode(''));
     this.pushHistory('add');
+    view.multi = null;
     view.sel = n.id;
     this.afterMutation();
     view.centerOn(n.id);
@@ -101,6 +113,7 @@ var editor = MS.editor = {
       n = doc.addChild(p.id, doc.createNode(''), idx);
     }
     this.pushHistory('add');
+    view.multi = null;
     view.sel = n.id;
     this.afterMutation();
     var self = this;
@@ -108,17 +121,18 @@ var editor = MS.editor = {
       if(view.sel === n.id && !self.editingId) self.startEdit(n.id, true);
     }, 30);
   },
-  deleteNode: function(){
+  deleteNode: function(){ this.deleteSelection(); },
+  /* 批量删除（多选感知）| delete selection, multi-aware */
+  deleteSelection: function(){
     var doc = view.doc;
-    var id = view.sel;
-    if(!id || id === doc.root.id){ MS.app.toast('中心主题不能删除'); return; }
-    var p = doc.findParent(id);
-    var idx = doc.indexOf(id);
-    doc.remove(id);
+    var ids = this.selectionIds();
+    if(!ids.length){ MS.app.toast('中心主题不能删除'); return; }
     this.pushHistory('del');
-    view.sel = p.id;
-    if(idx > 0 && p.children[idx-1]) view.sel = p.children[idx-1].id;
+    var n = doc.removeMany(ids);
+    view.multi = null;
+    view.sel = doc.root.id;
     this.afterMutation();
+    MS.app.toast('已删除 ' + n + ' 个节点');
   },
   toggleCollapse: function(id){
     id = id || view.sel;
@@ -154,44 +168,58 @@ var editor = MS.editor = {
     this.afterMutation();
   },
 
-  /* ── 复制 / 剪切 / 粘贴 ────────────────── */
+  /* ── 复制 / 剪切 / 粘贴（多选感知）| clipboard, multi-aware ── */
   copy: function(){
     var doc = view.doc;
-    var n = doc.find(view.sel || doc.root.id);
-    if(!n) return;
-    this.clip = JSON.stringify(n);
+    var ids = (view.multi && view.multi.size > 1) ? Array.from(view.multi) : [view.sel || doc.root.id];
+    var set = new Set(ids);
+    var items = [];
+    /* 跳过祖先已在集合中的成员（随祖先整树复制）| skip members shadowed by an ancestor in set */
+    doc.walk(function(n){
+      if(!set.has(n.id)) return;
+      var p = doc.findParent(n.id);
+      while(p){ if(set.has(p.id)) return; if(p.id === doc.root.id) break; p = doc.findParent(p.id); }
+      items.push(JSON.parse(JSON.stringify(n)));
+    });
+    this.clip = JSON.stringify({ items: items });
     try{ if(navigator.clipboard) navigator.clipboard.writeText(this.clip); }catch(e){}
-    MS.app.toast('已复制节点（含子树）');
+    MS.app.toast('已复制 ' + items.length + ' 个节点（含子树）');
   },
   cut: function(){
-    var doc = view.doc, id = view.sel;
-    if(!id || id === doc.root.id){ MS.app.toast('中心主题不能剪切'); return; }
-    this.clip = JSON.stringify(doc.find(id));
-    try{ if(navigator.clipboard) navigator.clipboard.writeText(this.clip); }catch(e){}
-    var p = doc.findParent(id);
-    var idx = doc.indexOf(id);
-    doc.remove(id);
-    this.pushHistory('cut');
-    view.sel = p.id;
-    if(idx > 0 && p.children[idx-1]) view.sel = p.children[idx-1].id;
-    this.afterMutation();
-    MS.app.toast('已剪切节点（含子树）');
+    if(!this.selectionIds().length){ MS.app.toast('中心主题不能剪切'); return; }
+    var n = this.selectionIds().length;
+    this.copy();
+    this.deleteSelection();
+    MS.app.toast('已剪切 ' + n + ' 个节点（含子树）');
   },
   paste: function(){
     var self = this, doc = view.doc;
     var target = view.sel || doc.root.id;
-    function doPaste(tree){
-      var n = self.pasteTree(tree, target);
+    function doPaste(items){
       self.pushHistory('paste');
-      if(n){ view.sel = n.id; self.afterMutation(); view.ensureVisible(n.id); }
+      var last = null;
+      items.forEach(function(t){ last = self.pasteTree(t, target); });
+      if(last){
+        view.multi = null;
+        view.sel = last.id;
+        self.afterMutation();
+        view.ensureVisible(last.id);
+      }
+      MS.app.toast('已粘贴 ' + items.length + ' 个节点');
     }
     if(this.clip){
-      try{ doPaste(JSON.parse(this.clip)); return; }catch(e){}
+      try{
+        /* 兼容旧版单节点剪贴与新版 {items:[…]} | compat: legacy single-node clip */
+        var parsed = JSON.parse(this.clip);
+        var items = Array.isArray(parsed) ? parsed : (parsed && parsed.items) ? parsed.items : [parsed];
+        doPaste(items);
+        return;
+      }catch(e){}
     }
     if(navigator.clipboard && navigator.clipboard.readText){
       navigator.clipboard.readText().then(function(t){
         var tree = MS.io.guessTree(t);
-        if(tree) doPaste(tree);
+        if(tree) doPaste([tree]);
         else MS.app.toast('粘贴板中没有可用的内容');
       }).catch(function(){ MS.app.toast('粘贴板中没有可用的内容'); });
     }
@@ -215,6 +243,8 @@ var editor = MS.editor = {
 
   /* ── 行内编辑 ─────────────────────────── */
   startEdit: function(id, isNew){
+    view.multi = null;
+    view.applySelection();
     if(this.editingId) this.commitEdit();
     var node = view.doc.find(id);
     var info = view.layout && view.layout.nodes.get(id);
@@ -315,6 +345,7 @@ var editor = MS.editor = {
         if(k === 'f'){ e.preventDefault(); MS.app.openSearch(); return; }
         if(k === 's'){ e.preventDefault(); MS.app.saveJSON(); return; }
         if(k === 'b'){ e.preventDefault(); self.toggleBold(); return; }
+        if(k === 'a'){ e.preventDefault(); view.selectAllVisible(); return; }
         if(key === '='){ e.preventDefault(); view.zoomTo(view.scale*1.2, true); return; }
         if(key === '-'){ e.preventDefault(); view.zoomTo(view.scale/1.2, true); return; }
         if(key === '0'){ e.preventDefault(); view.zoomTo(1, true); return; }
@@ -337,6 +368,7 @@ var editor = MS.editor = {
   },
   nav: function(dir){
     if(!view.layout) return;
+    if(view.multi && view.multi.size > 1){ view.multi = null; view.applySelection(); } // 多选时方向键转单选导航
     var cur = view.layout.nodes.get(view.sel || view.doc.root.id);
     if(!cur) return;
     var best = null, bd = Infinity;
@@ -406,7 +438,15 @@ var editor = MS.editor = {
           lastTap = { id:null, t:0 };
           return;
         }
-        lastTap = { id:d.id, t:now };
+        lastTap = { id:down.id, t:now };
+      }
+      /* Ctrl+点击：切换选中；Shift+点击：范围选 | modifier clicks for multi-select */
+      if(e.ctrlKey || e.metaKey){ view.toggleSelection(down.id); return; }
+      if(e.shiftKey){ view.rangeSelectTo(down.id, true); return; }
+      if(view.multi && view.multi.size > 1){
+        if(view.multi.has(down.id)) return;      // 已在多选中：保持
+        view.select(down.id);                    // 点其它节点：转单选
+        return;
       }
       view.select(down.id);
     });
@@ -417,18 +457,77 @@ var editor = MS.editor = {
     });
   },
   startDrag: function(id){
+    var doc = view.doc;
+    var self = this;
+    /* 多选拖拽集合：跳过祖先在集合中的成员 | drag set: skip members shadowed by ancestors */
+    var ids = [id];
+    if(view.multi && view.multi.size > 1 && view.multi.has(id)){
+      var sel2 = new Set(view.multi);
+      ids = [];
+      view.multi.forEach(function(mid){
+        if(mid === doc.root.id) return;
+        var p = doc.findParent(mid), shadowed = false;
+        while(p){ if(sel2.has(p.id)){ shadowed = true; break; } if(p.id === doc.root.id) break; p = doc.findParent(p.id); }
+        if(!shadowed) ids.push(mid);
+      });
+    }
     var desc = new Set();
-    var node = view.doc.find(id);
-    if(node) (function rec(n){ desc.add(n.id); n.children.forEach(rec); })(node);
+    ids.forEach(function(i){
+      var n = doc.find(i);
+      if(n) (function rec(x){ desc.add(x.id); x.children.forEach(rec); })(n);
+    });
     var line = document.createElement('div');
     line.className = 'drop-line';
     line.style.display = 'none';
     view.el.overlay.appendChild(line);
     var el = view.nodeEl(id);
     if(el) el.classList.add('dragging');
-    return { id:id, desc:desc, line:line, target:null };
+    /* 拖拽幽灵预览 | drag ghost preview */
+    var ghost = document.createElement('div');
+    ghost.className = 'ms-ghost';
+    var info = view.layout.nodes.get(id);
+    if(info){
+      var st = MS.themes.styleFor(view.doc.find(id), info, view.theme);
+      ghost.style.background = st.bg;
+      ghost.style.color = st.color;
+      ghost.style.borderRadius = st.radius + 'px';
+    }
+    var node = view.doc.find(id);
+    ghost.textContent = (node && node.text) ? node.text : '（空）';
+    if(ids.length > 1){
+      var badge = document.createElement('span');
+      badge.className = 'ms-ghost-badge';
+      badge.textContent = '×' + ids.length;
+      ghost.appendChild(badge);
+    }
+    document.getElementById('workspace').appendChild(ghost);
+    /* 拖到画布边缘自动平移 | auto-pan when dragging near viewport edges */
+    view._autoPan = { dx:0, dy:0 };
+    self._panRaf = requestAnimationFrame(function loop(){
+      if(!self._drag){ return; }
+      var ap = view._autoPan;
+      if(ap && (ap.dx || ap.dy)){
+        view.vx -= ap.dx;
+        view.vy -= ap.dy;
+        view.applyView();
+      }
+      self._panRaf = requestAnimationFrame(loop);
+    });
+    return { id:id, ids:ids, desc:desc, line:line, ghost:ghost, target:null };
   },
   updateDrag: function(drag, e){
+    if(drag.ghost){
+      drag.ghost.style.left = (e.clientX + 14) + 'px';
+      drag.ghost.style.top = (e.clientY + 12) + 'px';
+    }
+    /* 指针接近画布边缘时设置自动平移强度（无论是否命中目标）| auto-pan near edges regardless of hit */
+    var rr = view.el.wrap.getBoundingClientRect(), m = 48, sp = 15;
+    var dx = 0, dy = 0;
+    if(e.clientX - rr.left < m) dx = -sp * (1 - (e.clientX - rr.left)/m);
+    if(rr.right - e.clientX < m) dx = sp * (1 - (rr.right - e.clientX)/m);
+    if(e.clientY - rr.top < m) dy = -sp * (1 - (e.clientY - rr.top)/m);
+    if(rr.bottom - e.clientY < m) dy = sp * (1 - (rr.bottom - e.clientY)/m);
+    view._autoPan = { dx:dx, dy:dy };
     var p = view.docCoords(e.clientX, e.clientY);
     var target = null, bd = Infinity;
     view.layout.nodes.forEach(function(i){
@@ -449,6 +548,10 @@ var editor = MS.editor = {
       mode = rel < 0.3 ? 'before' : (rel > 0.7 ? 'after' : 'child');
     }
     drag.target = { info:target, mode:mode };
+    if(drag.ghost){
+      drag.ghost.style.left = (e.clientX + 14) + 'px';
+      drag.ghost.style.top = (e.clientY + 12) + 'px';
+    }
     if(mode === 'child'){
       var el = view.nodeEl(target.id);
       if(el) el.classList.add('drop-into');
@@ -465,28 +568,38 @@ var editor = MS.editor = {
     var t = drag.target;
     if(!t) return;
     var doc = view.doc;
-    var ok;
+    /* 多选守卫：目标不得在拖拽集合或其后代中 | guard: target not inside drag set */
+    if(drag.desc.has(t.info.id)) return;
+    this.pushHistory('move');
     if(t.mode === 'child'){
-      ok = doc.move(drag.id, t.info.id, t.info.node.children.length);
+      /* 摘下集合依序追加为目标子节点 | detach set, append under target */
+      var removed = drag.ids.map(function(i){ return doc.remove(i); });
+      var p = doc.find(t.info.id);
+      removed.forEach(function(rm){ if(rm) p.children.push(rm.node); });
+      if(p.collapsed) p.collapsed = false;
     } else {
+      /* 摘下集合依序插入目标前/后 | detach set, insert before/after target */
       var pid = t.info.parentId || doc.root.id;
-      var idx = doc.indexOf(t.info.id);
-      if(t.mode === 'after') idx++;
-      ok = doc.move(drag.id, pid, idx);
+      var parent = doc.find(pid);
+      var removed2 = drag.ids.map(function(i){ return doc.remove(i); });
+      var at = parent.children.findIndex(function(c){ return c.id === t.info.id; }) + 1;
+      if(t.mode === 'before') at--;
+      removed2.forEach(function(rm, k){ if(rm) parent.children.splice(Math.max(0, at) + k, 0, rm.node); });
     }
-    if(ok){
-      // 拖入折叠目标时自动展开，避免节点隐身
-      if(t.mode === 'child' && t.info.node.collapsed) t.info.node.collapsed = false;
-      this.pushHistory('move');
-      view.sel = drag.id;
-      this.afterMutation();
-    }
+    view.multi = null;
+    view.sel = drag.id;
+    this.afterMutation();
   },
   endDragUI: function(drag){
     if(drag.line && drag.line.parentNode) drag.line.remove();
+    if(drag.ghost && drag.ghost.parentNode) drag.ghost.remove();
+    if(this._panRaf){ cancelAnimationFrame(this._panRaf); this._panRaf = null; }
+    view._autoPan = null;
     view.el.node.querySelectorAll('.node.drop-into').forEach(function(el){ el.classList.remove('drop-into'); });
-    var el = view.nodeEl(drag.id);
-    if(el) el.classList.remove('dragging');
+    (drag.ids || [drag.id]).forEach(function(i){
+      var el2 = view.nodeEl(i);
+      if(el2) el2.classList.remove('dragging');
+    });
   },
 
   /* ── 右键菜单 ─────────────────────────── */

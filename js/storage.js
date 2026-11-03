@@ -1,4 +1,6 @@
-/* MindSketch 本地存储（localStorage 多文档） */
+/* MindSketch 本地存储 | Local storage
+ * 多文档管理（localStorage）：新建/切换/重命名/删除/复制，含界面偏好。
+ * Multi-doc management in localStorage + UI preferences (theme/structure). */
 (function(){
 'use strict';
 var MS = window.MS = window.MS || {};

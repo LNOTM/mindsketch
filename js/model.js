@@ -1,4 +1,6 @@
-/* MindSketch 数据模型 */
+/* MindSketch 数据模型 | Data model
+ * 树节点增删改查、移动守卫（根/自身/后代）、id 白名单净化、序列化。
+ * Tree CRUD, move guards (root/self/descendant), id-sanitizing on import, serialization. */
 (function(){
 'use strict';
 var MS = window.MS = window.MS || {};
@@ -119,6 +121,18 @@ Doc.prototype = {
     if(i < 0) return null;
     var node = p.children.splice(i,1)[0];
     return { node:node, parentId:p.id, index:i };
+  },
+  /* 批量删除：先收集先序再逐个删，避免边遍历边改数组漏删 | batch remove: collect first, then delete */
+  removeMany: function(ids){
+    var self = this;
+    var set = new Set(ids || []);
+    var order = [];
+    this.walk(function(n){ if(set.has(n.id) && n.id !== self.root.id) order.push(n.id); });
+    var removed = 0;
+    order.forEach(function(id){
+      if(self.find(id)){ self.remove(id); removed++; }
+    });
+    return removed;
   },
   move: function(id, newParentId, index){
     if(id === this.root.id) return false;

@@ -1,4 +1,7 @@
-/* MindSketch 应用主控：工具栏 / 菜单 / 模态框 / 文档管理 / 搜索 / 导入导出调度 */
+/* MindSketch 应用主控 | App controller
+ * 工具栏下拉与右键菜单、模态框（模板/文档管理/帮助/备注）、搜索、导入导出调度、
+ * 自动保存与状态栏。| Toolbar & context menus, modals, search, io dispatch,
+ * autosave + status bar. */
 (function(){
 'use strict';
 var MS = window.MS = window.MS || {};
@@ -549,18 +552,19 @@ var app = MS.app = {
   helpModal: function(){
     var rows = [
       ['Tab / Insert','添加子主题'], ['Enter','添加同级主题'], ['F2 / 双击','编辑文字'],
-      ['Space','折叠 / 展开分支'], ['Delete / Backspace','删除节点'], ['方向键','在节点间移动'],
-      ['Ctrl+Z / Ctrl+Y','撤销 / 重做'], ['Ctrl+C / X / V','复制 / 剪切 / 粘贴'], ['Ctrl+B','节点加粗'],
-      ['Ctrl+F','搜索节点'], ['Ctrl+S','保存 JSON'], ['Ctrl+Shift+F','适应画布'],
-      ['Ctrl+0 / Ctrl+= / Ctrl+-','缩放 100% / 放大 / 缩小'], ['拖拽节点','调整层级与顺序'],
-      ['滚轮 / 双指捏合','缩放画布'], ['拖动空白处','平移画布']
+      ['Space','折叠 / 展开分支'], ['Delete / Backspace','删除节点（支持多选）'], ['方向键','在节点间移动'],
+      ['Ctrl+Z / Ctrl+Y','撤销 / 重做'], ['Ctrl+C / X / V','复制 / 剪切 / 粘贴（支持多选）'], ['Ctrl+B','节点加粗'],
+      ['Ctrl+A','全选可见节点'], ['Ctrl+F','搜索节点'], ['Ctrl+S','保存 JSON'], ['Ctrl+Shift+F','适应画布'],
+      ['Ctrl+0 / Ctrl+= / Ctrl+-','缩放 100% / 放大 / 缩小'], ['拖拽节点','调整层级与顺序（多选可整体拖拽）'],
+      ['左键空白拖拽','框选多选（Shift 并入选择）'], ['Ctrl+点击 / Shift+点击','切换选中 / 范围选'],
+      ['滚轮 / 双指捏合','缩放画布'], ['中键 / Alt+拖动 / 触摸','平移画布']
     ];
     this.modal(
       '<div class="modal-head"><span>快捷键与操作</span><button data-close>×</button></div>'
       +'<div class="modal-body"><table class="kbd-table">'
       + rows.map(function(r){ return '<tr><td><kbd>'+r[0]+'</kbd></td><td>'+r[1]+'</td></tr>'; }).join('')
       +'</table>'
-      +'<p style="color:#7a8699;margin-top:12px">提示：粘贴外部 Markdown / 缩进文本时会自动转换为节点子树；也可以把文件直接拖进页面导入。</p></div>'
+      +'<p style="color:#7a8699;margin-top:12px">提示：粘贴外部 Markdown / 缩进文本时会自动转换为节点子树；把文件直接拖进页面即可导入。</p></div>'
       +'<div class="modal-foot"><button class="btn primary" data-close>知道了</button></div>');
   },
 

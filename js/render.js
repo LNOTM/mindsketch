@@ -1,4 +1,5 @@
-/* MindSketch 画布渲染：节点层 + SVG 连线层 + 缩放平移 */
+/* MindSketch 画布渲染 | Canvas rendering: node layer, SVG links, zoom/pan,
+ * multi-selection state, rubber-band (drag) selection. */
 (function(){
 'use strict';
 var MS = window.MS = window.MS || {};
@@ -6,7 +7,9 @@ var util = MS.util;
 
 var view = MS.view = {
   doc:null, theme:null, structure:'map', layout:null,
-  sel:null, vx:0, vy:0, scale:1,
+  sel:null,            /* 主选中节点 | primary selected node id */
+  multi:null,          /* 多选集合 | Set of selected ids, or null for single selection */
+  vx:0, vy:0, scale:1,
   el:{},
 
   init: function(doc){
@@ -17,6 +20,12 @@ var view = MS.view = {
       node:   document.getElementById('node-layer'),
       overlay:document.getElementById('overlay-layer')
     };
+    /* 框选矩形层（屏幕坐标，不随画布缩放） | rubber-band rect layer (screen coords) */
+    this.el.band = document.createElement('div');
+    this.el.band.id = 'band';
+    this.el.band.style.display = 'none';
+    document.getElementById('workspace').appendChild(this.el.band);
+
     this.doc = doc;
     this.sel = doc.root.id;
     this.theme = MS.themes.get(MS.store.getPref('theme','classic'));
@@ -124,13 +133,76 @@ var view = MS.view = {
     util.bus.emit('zoom', this.scale);
   },
 
+  /* ── 选择状态 | selection state ─────────────────────── */
   applySelection: function(){
-    var sel = this.sel;
+    var active = this.multi || (this.sel ? new Set([this.sel]) : new Set());
     this.el.node.querySelectorAll('.node').forEach(function(el){
-      el.classList.toggle('selected', el.dataset.id === sel);
+      el.classList.toggle('selected', active.has(el.dataset.id));
     });
   },
-  select: function(id){ this.sel = id; this.applySelection(); util.bus.emit('select', id); },
+  /* 单选（清除多选）| single select (clears multi) */
+  select: function(id){
+    this.multi = null;
+    this.sel = id || null;
+    this.applySelection();
+    util.bus.emit('select', id || null);
+  },
+  /* 多选 | multi select */
+  setMulti: function(ids, primary){
+    this.multi = new Set(ids);
+    if(primary != null && this.multi.has(primary)) this.sel = primary;
+    else if(this.multi.size) this.sel = this.multi.values().next().value;
+    else this.sel = null;
+    if(!this.multi.size) this.multi = null;
+    this.applySelection();
+    util.bus.emit('multi', this.multi);
+  },
+  /* Ctrl+点击切换 | toggle one node (Ctrl+click) */
+  toggleSelection: function(id){
+    if(!this.multi) this.multi = this.sel ? new Set([this.sel]) : new Set();
+    if(this.multi.has(id)){
+      this.multi.delete(id);
+      if(this.sel === id) this.sel = this.multi.size ? this.multi.values().next().value : null;
+    } else {
+      this.multi.add(id);
+      this.sel = id;
+    }
+    if(!this.multi.size) this.multi = null;
+    this.applySelection();
+    util.bus.emit('multi', this.multi);
+  },
+  /* Shift+点击：同级优先的范围选 | Shift+click: sibling range first, else visible DFS order */
+  rangeSelectTo: function(id, additive){
+    var doc = this.doc;
+    var from = doc.find(this.sel), to = doc.find(id);
+    if(!from || !to){ this.select(id); return; }
+    var ids = null;
+    var pf = doc.findParent(this.sel), pt = doc.findParent(id);
+    if(pf && pt && pf.id === pt.id){
+      var i1 = pf.children.findIndex(function(c){ return c.id === this.sel; }, this);
+      var i2 = pf.children.findIndex(function(c){ return c.id === id; });
+      if(i1 >= 0 && i2 >= 0){
+        var a = Math.min(i1,i2), b = Math.max(i1,i2);
+        ids = pf.children.slice(a, b+1).map(function(c){ return c.id; });
+      }
+    }
+    if(!ids){
+      var order = doc.visibleNodes().map(function(v){ return v.node.id; });
+      var j1 = order.indexOf(this.sel), j2 = order.indexOf(id);
+      if(j1 < 0 || j2 < 0){ this.select(id); return; }
+      ids = order.slice(Math.min(j1,j2), Math.max(j1,j2)+1);
+    }
+    if(additive && this.multi){
+      var self2 = this;
+      this.multi.forEach(function(x){ if(ids.indexOf(x) < 0) ids.push(x); });
+    }
+    this.setMulti(ids, id);
+  },
+  /* 全选可见节点 | select all visible nodes */
+  selectAllVisible: function(){
+    var ids = this.doc.visibleNodes().map(function(v){ return v.node.id; });
+    this.setMulti(ids, this.sel);
+  },
 
   nodeEl: function(id){ return this.el.node.querySelector('.node[data-id="'+id+'"]'); },
   info: function(id){ return this.layout ? this.layout.nodes.get(id) : null; },
@@ -175,26 +247,46 @@ var view = MS.view = {
     if(x1 < 70 || y1 < 70 || x2 > r.width - 70 || y2 > r.height - 70) this.centerOn(id);
   },
 
+  /* ── 画布指针：左键空白=框选，中键/Alt/触摸=平移 ──
+   * Canvas pointers: LMB on empty = rubber-band select; middle/Alt/touch = pan. */
   bindCanvas: function(){
     var self = this, wrap = this.el.wrap;
     var pointers = new Map();
-    var pan = null, pinch = null, lastPanEnd = 0;
+    var pan = null, pinch = null, band = null, lastPanEnd = 0;
+
+    function bandRect(x1, y1, x2, y2){
+      var el = self.el.band;
+      el.style.display = 'block';
+      el.style.left = Math.min(x1,x2)+'px';
+      el.style.top = Math.min(y1,y2)+'px';
+      el.style.width = Math.abs(x2-x1)+'px';
+      el.style.height = Math.abs(y2-y1)+'px';
+    }
 
     wrap.addEventListener('pointerdown', function(e){
       pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
       if(pointers.size === 2){
         var ps = Array.from(pointers.values());
         pinch = { d: Math.hypot(ps[0].x-ps[1].x, ps[0].y-ps[1].y) };
-        pan = null;
+        pan = null; band = null; self.el.band.style.display = 'none';
         if(MS.editor && MS.editor.cancelDrag) MS.editor.cancelDrag();
         return;
       }
       if(e.target.closest('.node') || e.target.closest('[data-toggle]')) return;
-      if(e.button !== 0 && e.button !== 1) return;
-      pan = { x:e.clientX, y:e.clientY, vx:self.vx, vy:self.vy, moved:false };
-      wrap.classList.add('panning');
+      /* 平移：中键 / Alt+左键 / 触摸 | pan: middle button / Alt / touch */
+      if(e.button === 1 || (e.button === 0 && e.altKey) || e.pointerType === 'touch'){
+        if(e.button === 1) e.preventDefault();
+        pan = { x:e.clientX, y:e.clientY, vx:self.vx, vy:self.vy, moved:false };
+        wrap.classList.add('panning');
+        try{ wrap.setPointerCapture(e.pointerId); }catch(err){}
+        return;
+      }
+      if(e.button !== 0) return;
+      /* 左键空白：橡皮筋框选 | LMB on empty: rubber-band selection */
+      band = { sx:e.clientX, sy:e.clientY, additive: e.shiftKey };
       try{ wrap.setPointerCapture(e.pointerId); }catch(err){}
     });
+
     wrap.addEventListener('pointermove', function(e){
       if(pointers.has(e.pointerId)) pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
       if(pinch && pointers.size >= 2){
@@ -213,8 +305,11 @@ var view = MS.view = {
         self.vx = pan.vx + (e.clientX - pan.x);
         self.vy = pan.vy + (e.clientY - pan.y);
         self.applyView();
+        return;
       }
+      if(band) bandRect(band.sx, band.sy, e.clientX, e.clientY);
     });
+
     function endPointer(e){
       pointers.delete(e.pointerId);
       if(pointers.size < 2) pinch = null;
@@ -224,14 +319,45 @@ var view = MS.view = {
         wrap.classList.remove('panning');
       }
     }
-    wrap.addEventListener('pointerup', endPointer);
-    wrap.addEventListener('pointercancel', endPointer);
+    wrap.addEventListener('pointerup', function(e){
+      if(band){
+        var b = band; band = null;
+        self.el.band.style.display = 'none';
+        /* 屏幕矩形 → 画布坐标命中 | screen rect → canvas coords hit test */
+        var p1 = self.docCoords(Math.min(b.sx, e.clientX), Math.min(b.sy, e.clientY));
+        var p2 = self.docCoords(Math.max(b.sx, e.clientX), Math.max(b.sy, e.clientY));
+        var hits = [];
+        self.layout.nodes.forEach(function(i){
+          if(i.x < p2.x && p1.x < i.x + i.w && i.y < p2.y && p1.y < i.y + i.h) hits.push(i.id);
+        });
+        if(hits.length){
+          if(b.additive && self.multi){
+            var merged = Array.from(self.multi);
+            hits.forEach(function(id){ if(merged.indexOf(id) < 0) merged.push(id); });
+            self.setMulti(merged, b.additive ? self.sel : hits[0]);
+          } else {
+            self.setMulti(hits, hits.indexOf(self.sel) >= 0 ? self.sel : hits[0]);
+          }
+        } else if(!b.additive){
+          self.select(null);
+        }
+        endPointer(e);
+        return;
+      }
+      endPointer(e);
+    });
+    wrap.addEventListener('pointercancel', function(e){
+      band = null; self.el.band.style.display = 'none';
+      endPointer(e);
+    });
+
     wrap.addEventListener('wheel', function(e){
       e.preventDefault();
       var r = wrap.getBoundingClientRect();
       self.zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY*0.0016));
     }, { passive:false });
 
+    /* 框选后点击空白清除多选 | click on empty clears selection (unless band just ended) */
     wrap.addEventListener('click', function(e){
       if(Date.now() - lastPanEnd < 150) return;
       if(e.target.closest('.node') || e.target.closest('[data-toggle]')) return;
@@ -242,6 +368,7 @@ var view = MS.view = {
   setDoc: function(doc){
     this.doc = doc;
     this.sel = doc.root.id;
+    this.multi = null;
     this.relayout(true);
   }
 };

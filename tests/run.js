@@ -76,6 +76,17 @@ section('模型操作');
   ok(doc.move(b1.id, doc.root.id, 3) === true, '合法移动（分支重排序）');
   ok(doc.root.children[2].id === b1.id, '移动后位置正确');
 
+  // removeMany：先收集后删除，同数组边删边改不漏删（回归）
+  const md3 = makeDoc();
+  const topIds = md3.root.children.map(function(c){ return c.id; });
+  const rmCount = md3.removeMany(topIds);
+  ok(rmCount === 3, 'removeMany 独立删除 3 个顶层分支（子树随父，实际 ' + rmCount + '）');
+  ok(md3.count() === 1, '整树只剩根（实际 ' + md3.count() + '）');
+  const md4 = makeDoc();
+  const mixed = [md4.root.children[0].id, md4.root.children[1].children[0].id];
+  ok(md4.removeMany(mixed) === 2, '混合删除独立节点 2 个');
+  ok(md4.count() === 5, '剩余 5 节点（实际 ' + md4.count() + '）');
+
   // clone 生成新 id
   const cp = doc.cloneSubtree(doc.root.children[0].id);
   const ids = new Set();

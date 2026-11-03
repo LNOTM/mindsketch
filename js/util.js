@@ -1,4 +1,6 @@
-/* MindSketch 工具库 */
+/* MindSketch Utilities
+ * 工具库：HTML/XML 转义、文本测量与智能换行、颜色混合、事件总线、文件下载。
+ * Utilities: escaping, text measuring & word-wrapping, color mixing, event bus, downloads. */
 (function(){
 'use strict';
 var MS = window.MS = window.MS || {};
