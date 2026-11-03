@@ -1,0 +1,10 @@
+{
+  "name": "mindsketch",
+  "version": "1.0.0",
+  "description": "MindSketch 思维画板 — 免费在线思维导图（纯前端静态站点）",
+  "private": true,
+  "scripts": {
+    "test": "node tests/run.js"
+  },
+  "license": "MIT"
+}
