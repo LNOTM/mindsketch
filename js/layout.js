@@ -81,7 +81,9 @@ MS.layout = function(doc, opts){
     var colX = { 1:{}, '-1':{} };
     colX[1][1] = rm.w + gapX;
     colX['-1'][1] = -gapX;
-    for(var d=2; d<=14; d++){
+    var maxD = 0;
+    depthMap.forEach(function(d){ if(d > maxD) maxD = d; });
+    for(var d=2; d<=maxD+1; d++){
       colX[1][d] = colX[1][d-1] + (maxW[1][d-1] || 0) + gapX;
       colX['-1'][d] = colX['-1'][d-1] - (maxW['-1'][d-1] || 0) - gapX;
     }
@@ -121,16 +123,18 @@ MS.layout = function(doc, opts){
     }
 
     var cy = 0;
-    rightKids.forEach(function(c){ place(c, 1, 1, cy, root.id); cy += spanOf(c) + gapY; });
-    cy = 0;
-    leftKids.forEach(function(c){ place(c, 1, -1, cy, root.id); cy += spanOf(c) + gapY; });
-
-    /* 根节点垂直居中于所有一级分支 */
     var minY = Infinity, maxY = -Infinity;
-    root.children.forEach(function(c){
-      var b = nodes.get(c.id);
-      if(b){ if(b.y < minY) minY = b.y; if(b.y + b.h > maxY) maxY = b.y + b.h; }
-    });
+    if(expanded(root)){
+      rightKids.forEach(function(c){ place(c, 1, 1, cy, root.id); cy += spanOf(c) + gapY; });
+      cy = 0;
+      leftKids.forEach(function(c){ place(c, 1, -1, cy, root.id); cy += spanOf(c) + gapY; });
+
+      /* 根节点垂直居中于所有一级分支 */
+      root.children.forEach(function(c){
+        var b = nodes.get(c.id);
+        if(b){ if(b.y < minY) minY = b.y; if(b.y + b.h > maxY) maxY = b.y + b.h; }
+      });
+    }
     if(minY === Infinity){ minY = 0; maxY = rm.h; }
     addInfo(root, 0, 0, (minY + maxY)/2 - rm.h/2, rm.w, rm.h, 0, -1, null);
   }
@@ -143,8 +147,10 @@ MS.layout = function(doc, opts){
       if(d === 0) return;
       maxH[d] = Math.max(maxH[d] || 0, sizes.get(id).h);
     });
+    var maxD = 0;
+    depthMap.forEach(function(d){ if(d > maxD) maxD = d; });
     var rowY = { 0: 0 };
-    for(var d=1; d<=14; d++) rowY[d] = rowY[d-1] + (maxH[d-1] || 0) + orgVGap;
+    for(var d=1; d<=maxD+1; d++) rowY[d] = rowY[d-1] + (maxH[d-1] || 0) + orgVGap;
 
     var wCache = new Map();
     function subtreeW(n){

@@ -149,6 +149,58 @@ section('布局（4 种结构）');
   const lay3 = MS.layout(doc3, { structure:'right', measure });
   ok(!lay3.nodes.has(doc3.root.children[0].children[0].id), '折叠后后代不布局');
   ok(lay3.links.length === doc3.visibleNodes().length - 1, '折叠后连线数一致');
+
+  // 根节点折叠：布局不崩溃，仅剩根盒型（回归：曾 TypeError）
+  for(const s of ['map','right','left']){
+    const docR = makeDoc();
+    docR.root.collapsed = true;
+    let noThrow = true, size = 0;
+    try{
+      const layR = MS.layout(docR, { structure:s, measure });
+      size = layR.nodes.size;
+    }catch(e){ noThrow = false; console.error('   ', e.message); }
+    ok(noThrow && size === 1, s + ' 根节点折叠仅剩 1 盒型不崩溃');
+  }
+
+  // 超深树（17 层）：无 NaN/undefined 坐标（回归：列/行数组曾固定 14 层）
+  let deepN = { text:'L0', children:[] };
+  let curN = deepN;
+  for(let i = 1; i <= 17; i++){ const nx = { text:'L'+i, children:[] }; curN.children.push(nx); curN = nx; }
+  const deepDoc = MS.model.Doc.fromTree(deepN);
+  let deepOk = true;
+  for(const s of ['map','right','left','org']){
+    const layD = MS.layout(deepDoc, { structure:s, measure });
+    layD.nodes.forEach(info => { if(!isFinite(info.x) || !isFinite(info.y)) deepOk = false; });
+  }
+  ok(deepOk, '17 层深树四种结构坐标全部有限');
+}
+
+/* ═══════════ 2b. 安全与折叠回归 ═══════════ */
+section('安全净化与折叠回归');
+{
+  // P1-1：恶意 JSON 导入净化（id/style.bg 注入面）
+  const evil = { version:1, meta:{}, nextId:2,
+    root:{ id:'"><img src=x onerror=alert(1)>', text:'r',
+      children:[{ id:'ok-1', text:'c', style:{ bg:'red\" onmouseover=\"alert(2)', bold:'yes' }, children:[] }] } };
+  const sd = MS.model.Doc.fromJSON(evil);
+  ok(/^[A-Za-z0-9_-]{1,64}$/.test(sd.root.id), '恶意 id 被重分配: ' + sd.root.id);
+  ok(sd.root.children[0].id === 'ok-1', '合法 id 保留');
+  ok(!('bg' in sd.root.children[0].style), '非法 style.bg 被丢弃');
+  ok(sd.root.children[0].style.bold === true, 'bold 强转布尔');
+  const svParts = MS.io.exportSVGParts(sd, { structure:'right', theme: MS.themes.get('classic') });
+  ok(svParts.svg.indexOf('onerror') < 0 && svParts.svg.indexOf('onmouseover') < 0, 'SVG 导出无事件注入残留');
+
+  // P1-2：折叠父链上新增节点前应展开（ensureAncestorsVisible）
+  const cd = makeDoc();
+  cd.root.children[0].collapsed = true;
+  sandbox.MS.view = { doc: cd };   // editor 模块需要 view stub
+  const src2 = fs.readFileSync(path.join(__dirname, '..', 'js', 'editor.js'), 'utf8');
+  vm.runInContext(src2, sandbox, { filename: 'editor.js' });
+  const changed = MS.editor.ensureAncestorsVisible(cd.root.children[0].id);
+  ok(changed === true && cd.root.children[0].collapsed === false, 'ensureAncestorsVisible 展开折叠父链');
+  const changed2 = MS.editor.ensureAncestorsVisible(cd.root.children[1].id);
+  ok(changed2 === false, '已可见链返回 false');
+  delete sandbox.MS.view;
 }
 
 /* ═══════════ 3. Markdown 往返 ═══════════ */

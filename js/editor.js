@@ -24,8 +24,10 @@ var editor = MS.editor = {
   pushHistory: function(label){
     var json = JSON.stringify(view.doc.data);
     var h = this.hist, now = Date.now();
-    if(label && label === h.label && now - h.time < 1200 && h.ptr >= 0){
-      h.stack[h.ptr] = { json:json, label:label };  // 连续同类编辑合并为一步
+    // 仅连续同节点的文本编辑合并为一步；结构操作每次独立入栈
+    var coalesce = label && label.indexOf('text:') === 0 && label === h.label && now - h.time < 1200 && h.ptr >= 0;
+    if(coalesce){
+      h.stack[h.ptr] = { json:json, label:label };
       h.time = now;
       return;
     }
@@ -59,17 +61,32 @@ var editor = MS.editor = {
   },
 
   /* ── 节点操作 ─────────────────────────── */
+  /* 展开节点到根的父链，返回是否有变更（避免新/移入节点隐身） */
+  ensureAncestorsVisible: function(pid){
+    var doc = view.doc;
+    var changed = false;
+    var p = doc.find(pid);
+    while(p){
+      if(p.collapsed){ p.collapsed = false; changed = true; }
+      if(p.id === doc.root.id) break;
+      p = doc.findParent(p.id);
+    }
+    return changed;
+  },
   addChild: function(){
     var doc = view.doc;
     var pid = view.sel || doc.root.id;
     if(!doc.find(pid)) return;
+    this.ensureAncestorsVisible(pid);
     var n = doc.addChild(pid, doc.createNode(''));
     this.pushHistory('add');
     view.sel = n.id;
     this.afterMutation();
     view.centerOn(n.id);
     var self = this;
-    setTimeout(function(){ self.startEdit(n.id, true); }, 30);
+    setTimeout(function(){
+      if(view.sel === n.id && !self.editingId) self.startEdit(n.id, true);
+    }, 30);
   },
   addSibling: function(){
     var doc = view.doc;
@@ -79,6 +96,7 @@ var editor = MS.editor = {
     if(id === doc.root.id){ n = doc.addChild(id, doc.createNode('')); }
     else{
       var p = doc.findParent(id);
+      this.ensureAncestorsVisible(p.id);
       var idx = doc.indexOf(id) + 1;
       n = doc.addChild(p.id, doc.createNode(''), idx);
     }
@@ -86,7 +104,9 @@ var editor = MS.editor = {
     view.sel = n.id;
     this.afterMutation();
     var self = this;
-    setTimeout(function(){ self.startEdit(n.id, true); }, 30);
+    setTimeout(function(){
+      if(view.sel === n.id && !self.editingId) self.startEdit(n.id, true);
+    }, 30);
   },
   deleteNode: function(){
     var doc = view.doc;
@@ -276,8 +296,15 @@ var editor = MS.editor = {
         if(e.key === 'Escape') MS.app.closeModal();
         return;
       }
+      var menuEl = document.getElementById('ctx-menu');
+      if(menuEl && !menuEl.classList.contains('hidden')){
+        if(e.key === 'Escape') MS.app.closeMenus();
+        return;
+      }
       var ctrl = e.ctrlKey || e.metaKey;
       var key = e.key;
+      // 焦点在按钮/链接上时，Space 与 Enter 交给原生激活，不触发画布操作
+      if((key === ' ' || key === 'Enter') && t && t.closest && t.closest('button, a')) return;
       if(ctrl){
         var k = key.toLowerCase();
         if(k === 'z'){ e.preventDefault(); if(e.shiftKey) self.redo(); else self.undo(); return; }
@@ -331,9 +358,14 @@ var editor = MS.editor = {
   },
 
   /* ── 指针：选择 / 拖拽 ─────────────────── */
+  /* 触屏捏合开始时取消进行中的拖拽（两套 pointer 状态互斥） */
+  cancelDrag: function(){
+    if(this._drag){ this.endDragUI(this._drag); this._drag = null; }
+    this._down = null;
+  },
   bindPointer: function(){
     var self = this, wrap = view.el.wrap;
-    var down = null, drag = null, lastTap = { id:null, t:0 };
+    var lastTap = { id:null, t:0 };
 
     wrap.addEventListener('pointerdown', function(e){
       if(e.button !== 0) return;
@@ -346,40 +378,39 @@ var editor = MS.editor = {
       var nodeEl = e.target.closest('.node');
       if(!nodeEl) return;
       if(self.editingId && self.editingId !== nodeEl.dataset.id) self.commitEdit();
-      down = { id:nodeEl.dataset.id, x:e.clientX, y:e.clientY, moved:false };
+      self._down = { id:nodeEl.dataset.id, x:e.clientX, y:e.clientY, moved:false };
       try{ wrap.setPointerCapture(e.pointerId); }catch(err){}
     });
     wrap.addEventListener('pointermove', function(e){
+      var down = self._down;
       if(!down) return;
       if(!down.moved){
         if(Math.hypot(e.clientX-down.x, e.clientY-down.y) < 5) return;
         if(down.id === view.doc.root.id) return;
         down.moved = true;
-        drag = self.startDrag(down.id);
+        self._drag = self.startDrag(down.id);
         wrap.classList.add('dragging');
       }
-      if(drag) self.updateDrag(drag, e);
+      if(self._drag) self.updateDrag(self._drag, e);
     });
     wrap.addEventListener('pointerup', function(e){
+      var down = self._down;
       if(!down) return;
-      var d = down; down = null;
+      self._down = null;
       wrap.classList.remove('dragging');
-      if(drag){ self.finishDrag(drag); drag = null; return; }
+      if(self._drag){ var drag = self._drag; self._drag = null; self.finishDrag(drag); return; }
       var now = Date.now();
       if(e.pointerType === 'touch'){
-        if(lastTap.id === d.id && now - lastTap.t < 320){
-          self.startEdit(d.id);
+        if(lastTap.id === down.id && now - lastTap.t < 320){
+          self.startEdit(down.id);
           lastTap = { id:null, t:0 };
           return;
         }
         lastTap = { id:d.id, t:now };
       }
-      view.select(d.id);
+      view.select(down.id);
     });
-    wrap.addEventListener('pointercancel', function(){
-      if(drag){ self.endDragUI(drag); drag = null; }
-      down = null;
-    });
+    wrap.addEventListener('pointercancel', function(){ self.cancelDrag(); });
     wrap.addEventListener('dblclick', function(e){
       var nodeEl = e.target.closest('.node');
       if(nodeEl){ e.preventDefault(); self.startEdit(nodeEl.dataset.id); }
@@ -444,6 +475,8 @@ var editor = MS.editor = {
       ok = doc.move(drag.id, pid, idx);
     }
     if(ok){
+      // 拖入折叠目标时自动展开，避免节点隐身
+      if(t.mode === 'child' && t.info.node.collapsed) t.info.node.collapsed = false;
       this.pushHistory('move');
       view.sel = drag.id;
       this.afterMutation();

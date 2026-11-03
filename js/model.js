@@ -39,11 +39,27 @@ Doc.fromJSON = function(data){
   if(typeof data.nextId !== 'number' || !isFinite(data.nextId)) data.nextId = 1000;
   var meta = data.meta = data.meta || {};
   if(!meta.name) meta.name = '未命名导图';
+  var ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+  var maxNum = 0;
+  (function scan(n){
+    var s = String(n.id || '');
+    if(ID_RE.test(s)){
+      var m = /^n(\d+)$/.exec(s);
+      if(m) maxNum = Math.max(maxNum, parseInt(m[1], 10));
+    }
+    (Array.isArray(n.children) ? n.children : []).forEach(scan);
+  })(data.root);
+  if(data.nextId <= maxNum) data.nextId = maxNum + 1;
   function fix(n){
-    n.id = n.id ? String(n.id) : 'n' + (data.nextId++);
+    // id 白名单：非法 id（可能来自恶意文件）一律重新分配，阻断 HTML 属性注入
+    if(!ID_RE.test(String(n.id || ''))) n.id = 'n' + (data.nextId++);
+    else n.id = String(n.id);
     n.text = n.text == null ? '' : String(n.text);
     n.note = n.note == null ? '' : String(n.note);
     n.style = (n.style && typeof n.style === 'object') ? n.style : {};
+    // style.bg 仅接受 #hex，阻断 CSS/属性注入
+    if(n.style.bg != null && !/^#[0-9a-fA-F]{3,8}$/.test(String(n.style.bg))) delete n.style.bg;
+    if(n.style.bold) n.style.bold = true; else delete n.style.bold;
     n.collapsed = !!n.collapsed;
     n.children = Array.isArray(n.children) ? n.children.filter(Boolean).map(fix) : [];
     return n;
@@ -151,9 +167,7 @@ Doc.prototype = {
   count: function(){ var c=0; this.walk(function(){ c++; }); return c; },
   maxDepth: function(){
     var m = 0;
-    this.walk(function(n){ }, this.root);
-    var rec = function(n, d){ m = Math.max(m, d); n.children.forEach(function(c){ rec(c, d+1); }); };
-    rec(this.root, 0);
+    (function rec(n, d){ if(d > m) m = d; n.children.forEach(function(c){ rec(c, d+1); }); })(this.root, 0);
     return m + 1;
   },
 

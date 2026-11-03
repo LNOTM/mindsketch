@@ -58,6 +58,7 @@ var app = MS.app = {
   showMenu: function(x, y, items){
     var menu = document.getElementById('ctx-menu');
     this._lastItems = items;
+    if(this._menuClose) document.removeEventListener('pointerdown', this._menuClose, true);
     menu.classList.remove('hidden');
     menu.innerHTML = this.renderItems(items);
     this.positionMenu(menu, x, y);
@@ -275,6 +276,8 @@ var app = MS.app = {
     });
   },
   replaceDoc: function(doc){
+    MS.editor.editingId = null;
+    MS.editor.inputEl = null;
     view.doc = doc;
     view.sel = doc.root.id;
     MS.store.createDoc(doc.name, doc.serialize());
@@ -288,6 +291,8 @@ var app = MS.app = {
     if(!entry) return;
     var doc = MS.model.Doc.fromJSON(entry.data);
     if(!doc) return;
+    MS.editor.editingId = null;
+    MS.editor.inputEl = null;
     view.doc = doc;
     view.sel = doc.root.id;
     view.relayout(true);
@@ -369,16 +374,43 @@ var app = MS.app = {
     if(this.hits.length){
       this.hitIdx = 0;
       document.getElementById('search-count').textContent = '1/'+this.hits.length;
+      this.revealNode(this.hits[0]);
+      this._paintHits();
       view.select(this.hits[0]);
       view.ensureVisible(this.hits[0]);
     } else {
       document.getElementById('search-count').textContent = '0';
     }
   },
+  /* 重绘后重新贴搜索高亮 */
+  _paintHits: function(){
+    var self = this;
+    view.el.node.querySelectorAll('.node.hit').forEach(function(el){ el.classList.remove('hit'); });
+    view.el.node.querySelectorAll('.node').forEach(function(el){
+      if(self.hits.indexOf(el.dataset.id) >= 0) el.classList.add('hit');
+    });
+  },
+  /* 搜索命中折叠分支内的节点时，展开其全部祖先 */
+  revealNode: function(id){
+    var doc = view.doc;
+    var changed = false;
+    var p = doc.findParent(id);
+    while(p){
+      if(p.collapsed){ p.collapsed = false; changed = true; }
+      if(p.id === doc.root.id) break;
+      p = doc.findParent(p.id);
+    }
+    if(changed){
+      MS.editor.pushHistory('search-reveal');
+      view.relayout();
+    }
+  },
   nextHit: function(){
     if(!this.hits.length) return;
     this.hitIdx = (this.hitIdx + 1) % this.hits.length;
     document.getElementById('search-count').textContent = (this.hitIdx+1)+'/'+this.hits.length;
+    this.revealNode(this.hits[this.hitIdx]);
+    this._paintHits();
     view.select(this.hits[this.hitIdx]);
     view.ensureVisible(this.hits[this.hitIdx]);
   },

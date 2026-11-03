@@ -17,6 +17,8 @@ function cleanName(fileName){
 /* ═══════════ SVG 导出（静态导出与交互网页共用） ═══════════ */
 
 function buttonPos(info, structure){
+  if(structure === 'org')
+    return { x: info.x + info.w/2, y: info.y + info.h + 14 };
   var x;
   if(info.depth === 0) x = structure === 'left' ? info.x - 14 : info.x + info.w + 14;
   else x = info.side === 1 ? info.x + info.w + 14 : info.x - 14;
@@ -398,9 +400,14 @@ async function importAuto(fileName, content){
   if(ext === 'xmind'){
     return MS.model.Doc.fromTree(await parseXMind(content), cleanName(fileName));
   }
-  if(ext === 'json' || /^\s*\{/.test(content)){
+  if(ext === 'json'){
     var d = parseJSONDoc(content);
     if(d){ if(!d.data.meta.importedName) d.name = d.name === '未命名导图' ? cleanName(fileName) : d.name; return d; }
+    throw new Error('JSON 文件格式无法识别（需要 MindSketch 导出格式或通用树形结构）');
+  }
+  if(/^\s*\{/.test(content)){
+    var d2 = parseJSONDoc(content);
+    if(d2){ if(!d2.data.meta.importedName) d2.name = d2.name === '未命名导图' ? cleanName(fileName) : d2.name; return d2; }
   }
   var tree = null;
   if(ext === 'opml' || /^\s*(<\?xml|<opml)/i.test(content)) tree = parseOPML(content);

@@ -96,6 +96,8 @@ var view = MS.view = {
   },
 
   buttonPos: function(info){
+    if(this.structure === 'org')
+      return { x: info.x + info.w/2, y: info.y + info.h + 14 };
     var x;
     if(info.depth === 0) x = this.structure === 'left' ? info.x - 14 : info.x + info.w + 14;
     else x = info.side === 1 ? info.x + info.w + 14 : info.x - 14;
@@ -184,6 +186,7 @@ var view = MS.view = {
         var ps = Array.from(pointers.values());
         pinch = { d: Math.hypot(ps[0].x-ps[1].x, ps[0].y-ps[1].y) };
         pan = null;
+        if(MS.editor && MS.editor.cancelDrag) MS.editor.cancelDrag();
         return;
       }
       if(e.target.closest('.node') || e.target.closest('[data-toggle]')) return;
