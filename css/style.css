@@ -37,6 +37,14 @@ button{font-family:inherit}
 #canvas-area{position:absolute;left:0;top:0;transform-origin:0 0}
 #canvas-area.animating{transition:transform .25s ease}
 #link-layer{position:absolute;overflow:visible;pointer-events:none}
+#rel-layer{position:absolute;overflow:visible;pointer-events:none}
+.ms-rel path{pointer-events:stroke;cursor:pointer}
+.ms-rel rect,.ms-rel text{pointer-events:none}
+.ms-rel.selected-rel path{stroke-width:3.5;stroke-dasharray:none}
+#canvas-wrap.linking{cursor:crosshair}
+
+/* ── 免打扰模式 | zen mode ── */
+body.zen #toolbar,body.zen #statusbar,body.zen #zoom-ctrl,body.zen #search-pop{display:none}
 #node-layer{position:absolute;left:0;top:0}
 #overlay-layer{position:absolute;left:0;top:0;pointer-events:none;z-index:10}
 

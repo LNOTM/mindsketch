@@ -9,6 +9,30 @@
 var MS = window.MS = window.MS || {};
 var util = MS.util;
 
+/* 关系线路径：按两盒相对位置选边与控制点 | rel path: pick edges & control points by relative position */
+MS.relPath = function(a, b){
+  function f(v){ return Math.round(v*10)/10; }
+  var acx = a.x + a.w/2, acy = a.y + a.h/2;
+  var bcx = b.x + b.w/2, bcy = b.y + b.h/2;
+  var x1, y1, x2, y2, c1x, c1y, c2x, c2y;
+  if(bcx > a.x + a.w + 20){
+    x1 = a.x + a.w; y1 = acy; x2 = b.x; y2 = bcy;
+    c1x = x1 + (x2-x1)*0.45; c1y = y1; c2x = x1 + (x2-x1)*0.55; c2y = y2;
+  } else if(bcx + b.w < a.x - 20){
+    x1 = a.x; y1 = acy; x2 = b.x + b.w; y2 = bcy;
+    c1x = x2 + (x1-x2)*0.45; c1y = y1; c2x = x2 + (x1-x2)*0.55; c2y = y2;
+  } else if(bcy > a.y + a.h + 20){
+    x1 = acx; y1 = a.y + a.h; x2 = bcx; y2 = b.y;
+    c1x = x1; c1y = y1 + (y2-y1)*0.45; c2x = x2; c2y = y1 + (y2-y1)*0.55;
+  } else {
+    x1 = acx; y1 = a.y; x2 = bcx; y2 = b.y + b.h;
+    c1x = x1; c1y = y2 + (y1-y2)*0.45; c2x = x2; c2y = y2 + (y1-y2)*0.55;
+  }
+  var midX = (x1 + c1x*3 + c2x*3 + x2)/8, midY = (y1 + c1y*3 + c2y*3 + y2)/8;
+  return { d:'M '+f(x1)+' '+f(y1)+' C '+f(c1x)+' '+f(c1y)+', '+f(c2x)+' '+f(c2y)+', '+f(x2)+' '+f(y2),
+           mid:{ x:f(midX), y:f(midY) } };
+};
+
 MS.layout = function(doc, opts){
   var structure = opts.structure || 'map';
   var measure = opts.measure;

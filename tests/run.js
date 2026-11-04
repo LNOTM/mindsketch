@@ -214,6 +214,40 @@ section('安全净化与折叠回归');
   delete sandbox.MS.view;
 }
 
+/* ═══════════ 2c. 关系线 ═══════════ */
+section('关系线（Relationship lines）');
+{
+  const rd = makeDoc();
+  const rel = rd.addRel(rd.root.children[0].id, rd.root.children[1].id, '对比');
+  ok(!!rel && rd.data.rels.length === 1 && rel.label === '对比', 'addRel 创建带标注');
+  ok(rd.addRel(rd.root.children[0].id, rd.root.children[0].id) === null, '禁止自连');
+  ok(rd.addRel('不存在的id', rd.root.children[1].id) === null, '禁止无效端点');
+  const rel2 = rd.addRel(rd.root.children[1].id, rd.root.id, '');
+  ok(rd.data.rels.length === 2 && rd.data.nextRelId >= 3, '第二条关系线与计数器');
+  // JSON 往返含关系线
+  const rj = MS.io.parseJSONDoc(JSON.stringify(rd.serialize()));
+  ok(rj && rj.data.rels.length === 2 && rj.data.rels[0].label === '对比', 'JSON 往返保留关系线');
+  // 恶意 rels 净化：自连/无效端点/坏 id
+  const evilR = MS.io.parseJSONDoc(JSON.stringify({ version:1, meta:{}, nextId:100,
+    root:{ id:'r0', text:'t', children:[{ id:'r1', text:'a', children:[] }] },
+    rels:[ { id:'<img>', from:'r0', to:'r1', label:'x' }, { id:'r9', from:'r0', to:'r0' }, { id:'r10', from:'ghost', to:'r1' } ] }));
+  ok(evilR.data.rels.length === 1 && /^[A-Za-z0-9_-]{1,64}$/.test(evilR.data.rels[0].id), '恶意 rels 被净化到仅剩合法条目');
+  // 删除节点后 prune
+  rd.remove(rd.root.children[0].id);
+  rd.pruneRels();
+  ok(rd.data.rels.length === 1 && rd.data.rels[0].id === rel2.id, 'pruneRels 清理悬空关系线');
+  // 导出 SVG 包含关系线且标注被转义
+  const evilLabel = MS.model.Doc.fromJSON({ version:1, meta:{}, nextId:200, nextRelId:1,
+    root:{ id:'x1', text:'A', children:[{ id:'x2', text:'B', children:[] }] },
+    rels:[ { id:'r1', from:'x1', to:'x2', label:'<b>bad</b>' } ] });
+  const rp = MS.io.exportSVGParts(evilLabel, { structure:'right', theme: MS.themes.get('classic') });
+  ok(rp.svg.indexOf('ms-arrow') >= 0, 'SVG 导出包含箭头 marker');
+  ok(rp.svg.indexOf('&lt;b&gt;') >= 0 && rp.svg.indexOf('<b>') < 0, '关系线标注已转义');
+  ok(rp.svg.indexOf('onerror') < 0, 'SVG 无事件注入');
+  // 交互网页导出含关系线
+  ok(MS.io.exportInteractiveHTML(evilLabel, { structure:'map', theme: MS.themes.get('classic') }).indexOf('ms-arrow') >= 0, '交互网页导出包含关系线');
+}
+
 /* ═══════════ 3. Markdown 往返 ═══════════ */
 section('Markdown 导入导出往返');
 {

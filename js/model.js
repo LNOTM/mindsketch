@@ -1,6 +1,6 @@
 /* MindSketch 数据模型 | Data model
- * 树节点增删改查、移动守卫（根/自身/后代）、id 白名单净化、序列化。
- * Tree CRUD, move guards (root/self/descendant), id-sanitizing on import, serialization. */
+ * 树节点增删改查、移动守卫（根/自身/后代）、id 白名单净化、序列化、关系线。
+ * Tree CRUD, move guards (root/self/descendant), id-sanitizing on import, serialization, relationship lines. */
 (function(){
 'use strict';
 var MS = window.MS = window.MS || {};
@@ -13,6 +13,8 @@ Doc.newData = function(rootText, name){
     version: 1,
     meta: { name: name || '未命名导图' },
     nextId: 2,
+    nextRelId: 1,
+    rels: [],   /* 关系线 | relationship lines: {id, from, to, label} */
     root: { id:'n1', text: rootText || '中心主题', note:'', style:{}, collapsed:false, children:[] }
   };
 };
@@ -39,6 +41,8 @@ Doc.fromTree = function(tree, name){
 Doc.fromJSON = function(data){
   if(!data || typeof data !== 'object' || !data.root) return null;
   if(typeof data.nextId !== 'number' || !isFinite(data.nextId)) data.nextId = 1000;
+  if(typeof data.nextRelId !== 'number' || !isFinite(data.nextRelId)) data.nextRelId = 1;
+  if(!Array.isArray(data.rels)) data.rels = [];
   var meta = data.meta = data.meta || {};
   if(!meta.name) meta.name = '未命名导图';
   var ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -67,8 +71,30 @@ Doc.fromJSON = function(data){
     return n;
   }
   data.root = fix(data.root);
+  /* 关系线净化：id 白名单、端点必须存在且不相同 | sanitize rels: valid ids, both endpoints exist */
+  var ID_RE2 = /^[A-Za-z0-9_-]{1,64}$/;
+  var rels = [];
+  var maxRel = 0;
+  (data.rels || []).forEach(function(rl){
+    if(!rl || typeof rl !== 'object') return;
+    var f = String(rl.from || ''), t = String(rl.to || '');
+    var nf = doc0Find(data.root, f), nt = doc0Find(data.root, t);
+    if(!nf || !nt || f === t) return;
+    var rid = ID_RE2.test(String(rl.id || '')) ? String(rl.id) : ('r' + (data.nextRelId++));
+    var m = /^r(\d+)$/.exec(rid);
+    if(m) maxRel = Math.max(maxRel, parseInt(m[1], 10));
+    rels.push({ id:rid, from:nf.id, to:nt.id, label:String(rl.label || '').slice(0, 200) });
+  });
+  if(data.nextRelId <= maxRel) data.nextRelId = maxRel + 1;
+  data.rels = rels;
   return new Doc(data);
 };
+/* fromJSON 内部查找（在净化完成前使用）| internal lookup used before sanitize */
+function doc0Find(root, id){
+  var found = null;
+  (function w(n){ if(found) return; if(n.id === id){ found = n; return; } n.children.forEach(w); })(root);
+  return found;
+}
 
 Doc.prototype = {
   get root(){ return this.data.root; },
@@ -183,6 +209,34 @@ Doc.prototype = {
     var m = 0;
     (function rec(n, d){ if(d > m) m = d; n.children.forEach(function(c){ rec(c, d+1); }); })(this.root, 0);
     return m + 1;
+  },
+
+  /* ── 关系线 | relationship lines ─────────────── */
+  addRel: function(fromId, toId, label){
+    if(fromId === toId) return null;
+    if(!this.find(fromId) || !this.find(toId)) return null;
+    if(!this.data.rels) this.data.rels = [];
+    if(!this.data.nextRelId) this.data.nextRelId = 1;
+    var rel = { id:'r' + (this.data.nextRelId++), from:fromId, to:toId, label:String(label || '') };
+    this.data.rels.push(rel);
+    return rel;
+  },
+  removeRel: function(relId){
+    var rels = this.data.rels || [];
+    var i = rels.findIndex(function(r){ return r.id === relId; });
+    if(i < 0) return false;
+    rels.splice(i, 1);
+    return true;
+  },
+  findRel: function(relId){
+    return (this.data.rels || []).find(function(r){ return r.id === relId; }) || null;
+  },
+  /* 删除节点后清理悬空关系线 | prune rels with missing endpoints */
+  pruneRels: function(){
+    var rels = this.data.rels || [];
+    var keep = rels.filter(function(r){ return this.find(r.from) && this.find(r.to); }, this);
+    if(keep.length !== rels.length){ this.data.rels = keep; return true; }
+    return false;
   },
 
   serialize: function(){ return JSON.parse(JSON.stringify(this.data)); }

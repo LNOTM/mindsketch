@@ -17,6 +17,7 @@ var view = MS.view = {
       wrap:   document.getElementById('canvas-wrap'),
       area:   document.getElementById('canvas-area'),
       link:   document.getElementById('link-layer'),
+      rel:    document.getElementById('rel-layer'),
       node:   document.getElementById('node-layer'),
       overlay:document.getElementById('overlay-layer')
     };
@@ -63,9 +64,34 @@ var view = MS.view = {
     });
     this.drawLinks();
     this.drawNodes();
+    this.drawRels();
     this.updateSvg();
     if(fit) this.fit();
     util.bus.emit('layout');
+  },
+
+  /* 关系线层：曲线 + 箭头 + 标注，可点选 | relationship layer: curve + arrow + label, clickable */
+  drawRels: function(){
+    var self = this;
+    var rels = (this.doc.data && this.doc.data.rels) || [];
+    var parts = [];
+    /* 箭头 marker 随主题色重建 | rebuild arrow marker with current accent */
+    parts.push('<defs><marker id="ms-arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="'+this.theme.accent+'"/></marker></defs>');
+    rels.forEach(function(rel){
+      var a = self.layout.nodes.get(rel.from), b = self.layout.nodes.get(rel.to);
+      if(!a || !b) return;   /* 端点被折叠隐藏时暂不绘制 | skip while endpoint hidden by collapse */
+      var p = MS.relPath(a, b);
+      var sel = MS.editor && MS.editor.selectedRel === rel.id ? ' selected-rel' : '';
+      parts.push('<g class="ms-rel'+sel+'" data-rel="'+rel.id+'">');
+      parts.push('<path d="'+p.d+'" fill="none" stroke="'+self.theme.accent+'" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#ms-arrow)"/>');
+      if(rel.label){
+        var w = rel.label.length * 12 + 14;
+        parts.push('<rect x="'+(p.mid.x - w/2)+'" y="'+(p.mid.y - 10)+'" width="'+w+'" height="20" rx="6" fill="'+self.theme.accent+'" opacity="0.92"/>');
+        parts.push('<text x="'+p.mid.x+'" y="'+(p.mid.y + 4)+'" text-anchor="middle" font-size="12" fill="#ffffff">'+util.esc(rel.label)+'</text>');
+      }
+      parts.push('</g>');
+    });
+    this.el.rel.innerHTML = parts.join('');
   },
 
   drawLinks: function(){
@@ -121,6 +147,13 @@ var view = MS.view = {
     s.style.top = b.y+'px';
     s.style.width = b.w+'px';
     s.style.height = b.h+'px';
+    var r = this.el.rel;
+    r.setAttribute('viewBox', b.x+' '+b.y+' '+b.w+' '+b.h);
+    r.setAttribute('preserveAspectRatio', 'none');
+    r.style.left = b.x+'px';
+    r.style.top = b.y+'px';
+    r.style.width = b.w+'px';
+    r.style.height = b.h+'px';
   },
 
   applyView: function(animate){

@@ -141,7 +141,9 @@ var app = MS.app = {
       { label:'保存为 JSON', kbd:'Ctrl+S', action: function(){ app.saveJSON(); } },
       { sep:true },
       { label:'全部展开', action: function(){ MS.editor.expandAll(true); } },
-      { label:'全部折叠', action: function(){ MS.editor.expandAll(false); } }
+      { label:'全部折叠', action: function(){ MS.editor.expandAll(false); } },
+      { sep:true },
+      { label:'免打扰模式', kbd:'F9', action: function(){ app.toggleZen(); } }
     ]; },
     edit: function(){ return [
       { label:'撤销', kbd:'Ctrl+Z', action: function(){ MS.editor.undo(); } },
@@ -157,6 +159,8 @@ var app = MS.app = {
     insert: function(){ return [
       { label:'添加子主题', kbd:'Tab', action: function(){ MS.editor.addChild(); } },
       { label:'添加同级主题', kbd:'Enter', action: function(){ MS.editor.addSibling(); } },
+      { sep:true },
+      { label:'添加关系线', kbd:'再点目标节点', action: function(){ MS.editor.startRelLink(); } },
       { sep:true },
       { label:'添加备注…', action: function(){ app.editNote(view.sel || view.doc.root.id); } },
       { label:'节点颜色…', action: function(){ app.showColorPickerAt(); } }
@@ -552,9 +556,10 @@ var app = MS.app = {
   helpModal: function(){
     var rows = [
       ['Tab / Insert','添加子主题'], ['Enter','添加同级主题'], ['F2 / 双击','编辑文字'],
-      ['Space','折叠 / 展开分支'], ['Delete / Backspace','删除节点（支持多选）'], ['方向键','在节点间移动'],
+      ['Space','折叠 / 展开分支'], ['Delete / Backspace','删除节点 / 关系线（支持多选）'], ['方向键','在节点间移动'],
       ['Ctrl+Z / Ctrl+Y','撤销 / 重做'], ['Ctrl+C / X / V','复制 / 剪切 / 粘贴（支持多选）'], ['Ctrl+B','节点加粗'],
       ['Ctrl+A','全选可见节点'], ['Ctrl+F','搜索节点'], ['Ctrl+S','保存 JSON'], ['Ctrl+Shift+F','适应画布'],
+      ['F9','免打扰模式'], ['右键 → 添加关系线','再点目标节点；双击线可加标注'],
       ['Ctrl+0 / Ctrl+= / Ctrl+-','缩放 100% / 放大 / 缩小'], ['拖拽节点','调整层级与顺序（多选可整体拖拽）'],
       ['左键空白拖拽','框选多选（Shift 并入选择）'], ['Ctrl+点击 / Shift+点击','切换选中 / 范围选'],
       ['滚轮 / 双指捏合','缩放画布'], ['中键 / Alt+拖动 / 触摸','平移画布']
@@ -578,6 +583,12 @@ var app = MS.app = {
       +'<p>· 设计上吸收了 XMind（结构 / 主题 / 快捷键）、幕布（大纲模式）、markmap（Markdown 与交互网页）、GitMind（模板）、Whimsical（现代交互）的优点</p>'
       +'<p>· 开源地址：<a href="https://github.com/LNOTM/mindsketch" target="_blank" rel="noopener">github.com/LNOTM/mindsketch</a></p>'
       +'</div><div class="modal-foot"><button class="btn primary" data-close>关闭</button></div>');
+  },
+
+  toggleZen: function(){
+    document.body.classList.toggle('zen');
+    this.toast(document.body.classList.contains('zen') ? '免打扰模式已开启（F9 退出）' : '免打扰模式已关闭');
+    if(view.layout) view.fit();
   },
 
   /* ═══════════ 模板与示例 ═══════════ */

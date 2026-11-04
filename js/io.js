@@ -88,6 +88,22 @@ function exportSVGParts(doc, opts){
   }
 
   parts.push(nodeG(layout.nodes.get(doc.root.id)));
+  /* 关系线（画在节点之上）| relationship lines on top of nodes */
+  var docRels = (doc.data && doc.data.rels) || [];
+  if(docRels.length){
+    parts.push('<defs><marker id="ms-arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="'+theme.accent+'"/></marker></defs>');
+    docRels.forEach(function(rel){
+      var a = layout.nodes.get(rel.from), b = layout.nodes.get(rel.to);
+      if(!a || !b) return;
+      var p = MS.relPath(a, b);
+      parts.push('<path d="'+p.d+'" fill="none" stroke="'+theme.accent+'" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#ms-arrow)"/>');
+      if(rel.label){
+        var lw = rel.label.length * 12 + 14;
+        parts.push('<rect x="'+r(p.mid.x - lw/2)+'" y="'+r(p.mid.y - 10)+'" width="'+lw+'" height="20" rx="6" fill="'+theme.accent+'" opacity="0.92"/>');
+        parts.push('<text x="'+r(p.mid.x)+'" y="'+r(p.mid.y + 4)+'" text-anchor="middle" font-size="12" fill="#ffffff">'+util.esc(rel.label)+'</text>');
+      }
+    });
+  }
   parts.push('</svg>');
   return { svg:parts.join(''), bounds:b, layout:layout, theme:theme };
 }

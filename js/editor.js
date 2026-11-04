@@ -15,6 +15,8 @@ var editor = MS.editor = {
   inputEl: null,
   editNew: false,
   editOrig: '',
+  linkingFrom: null,   /* 关系线创建模式：源节点 | pending rel source */
+  selectedRel: null,   /* 选中的关系线 | selected relationship id */
   hist: { stack:[], ptr:-1, label:'', time:0 },
 
   init: function(){
@@ -77,6 +79,42 @@ var editor = MS.editor = {
     }
     return changed;
   },
+  /* ── 关系线交互 | relationship interactions ── */
+  startRelLink: function(){
+    var id = view.sel || view.doc.root.id;
+    this.linkingFrom = id;
+    view.el.wrap.classList.add('linking');
+    MS.app.toast('请点击目标节点建立关系线（Esc 取消）');
+  },
+  cancelRelLink: function(){
+    this.linkingFrom = null;
+    view.el.wrap.classList.remove('linking');
+  },
+  selectRel: function(id){
+    this.selectedRel = id;
+    view.drawRels();
+  },
+  clearRelSelection: function(){
+    if(this.selectedRel){ this.selectedRel = null; view.drawRels(); }
+  },
+  deleteSelectedRel: function(){
+    if(!this.selectedRel) return;
+    view.doc.removeRel(this.selectedRel);
+    this.pushHistory('rel-del');
+    this.selectedRel = null;
+    this.afterMutation();
+    MS.app.toast('已删除关系线');
+  },
+  labelRel: function(relId){
+    var rel = view.doc.findRel(relId);
+    if(!rel) return;
+    var label = prompt('关系线标注（留空清除）', rel.label || '');
+    if(label === null) return;
+    rel.label = label.trim();
+    this.pushHistory('rel-label');
+    this.afterMutation();
+  },
+
   /* ── 节点操作 | node ops ─────────────── */
   /* 当前选中集（多选感知，排除根）| current selection ids (multi-aware, root excluded) */
   selectionIds: function(){
@@ -129,6 +167,7 @@ var editor = MS.editor = {
     if(!ids.length){ MS.app.toast('中心主题不能删除'); return; }
     this.pushHistory('del');
     var n = doc.removeMany(ids);
+    doc.pruneRels();   /* 清理悬空关系线 | prune dangling rels */
     view.multi = null;
     view.sel = doc.root.id;
     this.afterMutation();
@@ -244,6 +283,7 @@ var editor = MS.editor = {
   /* ── 行内编辑 ─────────────────────────── */
   startEdit: function(id, isNew){
     view.multi = null;
+    this.clearRelSelection();
     view.applySelection();
     if(this.editingId) this.commitEdit();
     var node = view.doc.find(id);
@@ -331,6 +371,8 @@ var editor = MS.editor = {
         if(e.key === 'Escape') MS.app.closeMenus();
         return;
       }
+      /* 关系线创建模式：Esc 取消 | Esc cancels rel linking */
+      if(self.linkingFrom && e.key === 'Escape'){ self.cancelRelLink(); return; }
       var ctrl = e.ctrlKey || e.metaKey;
       var key = e.key;
       // 焦点在按钮/链接上时，Space 与 Enter 交给原生激活，不触发画布操作
@@ -357,7 +399,11 @@ var editor = MS.editor = {
         case 'Enter': e.preventDefault(); self.addSibling(); return;
         case 'F2': e.preventDefault(); if(view.sel) self.startEdit(view.sel); return;
         case ' ': e.preventDefault(); self.toggleCollapse(); return;
-        case 'Delete': case 'Backspace': e.preventDefault(); self.deleteNode(); return;
+        case 'Delete': case 'Backspace':
+          e.preventDefault();
+          if(self.selectedRel){ self.deleteSelectedRel(); } else { self.deleteNode(); }
+          return;
+        case 'F9': e.preventDefault(); MS.app.toggleZen(); return;
         case 'ArrowLeft': e.preventDefault(); self.nav('left'); return;
         case 'ArrowRight': e.preventDefault(); self.nav('right'); return;
         case 'ArrowUp': e.preventDefault(); self.nav('up'); return;
@@ -401,6 +447,22 @@ var editor = MS.editor = {
 
     wrap.addEventListener('pointerdown', function(e){
       if(e.button !== 0) return;
+      /* 关系线创建模式：点击目标节点完成 | linking mode: click target node */
+      if(self.linkingFrom){
+        e.preventDefault();
+        var targetEl = e.target.closest('.node');
+        if(targetEl && targetEl.dataset.id !== self.linkingFrom){
+          var rel = view.doc.addRel(self.linkingFrom, targetEl.dataset.id, '');
+          if(rel){
+            self.pushHistory('rel');
+            view.sel = self.linkingFrom;
+            self.afterMutation();
+            MS.app.toast('已创建关系线');
+          }
+        }
+        self.cancelRelLink();
+        return;
+      }
       var tog = e.target.closest('[data-toggle]');
       if(tog){
         e.preventDefault();
@@ -451,7 +513,16 @@ var editor = MS.editor = {
       view.select(down.id);
     });
     wrap.addEventListener('pointercancel', function(){ self.cancelDrag(); });
+    /* 点击/双击关系线 | click / dblclick on a relationship line */
+    wrap.addEventListener('click', function(e){
+      var relEl = e.target.closest('[data-rel]');
+      if(!relEl) { self.clearRelSelection(); return; }
+      e.stopPropagation();
+      self.selectRel(relEl.getAttribute('data-rel'));
+    }, true);
     wrap.addEventListener('dblclick', function(e){
+      var relEl = e.target.closest('[data-rel]');
+      if(relEl){ e.preventDefault(); self.labelRel(relEl.getAttribute('data-rel')); return; }
       var nodeEl = e.target.closest('.node');
       if(nodeEl){ e.preventDefault(); self.startEdit(nodeEl.dataset.id); }
     });
@@ -624,6 +695,7 @@ var editor = MS.editor = {
     items.push(
       { label:'编辑文字', kbd:'F2', action: function(){ editor.startEdit(id); } },
       { label:(n && n.note) ? '编辑备注' : '添加备注', action: function(){ MS.app.editNote(id); } },
+      { label:'添加关系线', action: function(){ editor.startRelLink(); } },
       { sep:true },
       { label:'节点颜色', children:'color' },
       { label:(n && n.style && n.style.bold) ? '取消加粗' : '加粗', kbd:'Ctrl+B', action: function(){ editor.toggleBold(); } },
