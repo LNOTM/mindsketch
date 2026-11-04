@@ -15,6 +15,8 @@
 - **Full keyboard support**: `Tab` add child, `Enter` add sibling, `F2`/double-click edit, `Space` collapse, arrow-key navigation, `Ctrl+Z/Y` undo/redo, `Ctrl+C/X/V` clipboard, `Ctrl+B` bold, `Ctrl+F` search, `Ctrl+A` select all
 - **Drag & drop restructuring**: drop on the middle of a node to make it a child, drop on top/bottom edge to insert before/after — with a live drop indicator
 - **Rubber-band multi-select**: drag on empty canvas to lasso nodes; Ctrl+click toggles, Shift+click range-selects, Ctrl+A selects all
+- **Relationship lines (new in v1.0.7, inspired by XMind)**: pick "Add relationship" from the context or Insert menu, then click a target node to draw a cross-branch arrow; **double-click a line** to add a text label; click to select and press `Delete` to remove; dangling lines are pruned automatically when an endpoint is deleted (undoable); drawn in SVG / interactive-HTML / PNG / JPG / PDF exports
+- **Zen mode (new in v1.0.7)**: `F9` or File menu hides the toolbar, status bar and zoom controls for distraction-free editing; press `F9` again to exit
 - **Multi-select batch ops**: delete / copy / cut / paste / drag whole groups (with ancestor-dedup so subtrees move together)
 - **Drag ghost preview** and **auto-pan when dragging near canvas edges**
 - **Node features**: notes (✎ badge), custom colors, bold, multi-line text, word wrap, collapse/expand
@@ -45,7 +47,7 @@
 
 | Reference | What we adopted |
 |----------|-----------------|
-| XMind | Layouts, themes, branch coloring, shortcut system, collapse, rubber-band select, drag ghost & auto-pan |
+| XMind | Layouts, themes, branch coloring, shortcut system, collapse, rubber-band select, drag ghost & auto-pan, relationship lines |
 | Mubu | Outline ⇄ map two-way editing |
 | markmap | Markdown ecosystem + single-file interactive HTML export |
 | GitMind | Zero-friction free usage; quick templates |
